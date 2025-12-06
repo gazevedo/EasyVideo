@@ -26,7 +26,7 @@ async def processar(message: types.Message):
         await message.reply_video(open(video, "rb"), caption="Vídeo baixado!")
         os.remove(video)
     except Exception as e:
-        await message.reply(f"❌ Erro ao baixar: {e}")
+        await message.reply(f"❌ Erro: ao baixar: {e}")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
