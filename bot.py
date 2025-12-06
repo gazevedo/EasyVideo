@@ -2,7 +2,7 @@ import os
 import asyncio
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application
+from telegram.ext import Application, CommandHandler
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
@@ -29,7 +29,7 @@ def webhook():
     data = request.get_json()
     update = Update.de_json(data, application.bot)
 
-    # Processar update NO EVENT LOOP CORRETO
+    # Processar update NO LOOP CORRETO
     loop.create_task(application.process_update(update))
 
     return "ok", 200
