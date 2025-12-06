@@ -1,16 +1,19 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from aiogram import Bot, Dispatcher, types
+from aiogram import F
+import asyncio
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello World!")
 
-def main():
-    app = Application.builder().token(TOKEN).build()
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-    app.add_handler(CommandHandler("start", start))
+@dp.message(F.text.lower() == "oi")
+async def responder_oi(message: types.Message):
+    await message.answer("oi")
 
-    app.run_polling()
+async def main():
+    print("Bot iniciado e rodando!")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
