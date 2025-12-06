@@ -1,19 +1,17 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram import F
-import asyncio
+from aiogram import Bot, Dispatcher, executor, types
 
-TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
+TOKEN = "COLOQUE_SEU_TOKEN_AQUI"
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
-@dp.message(F.text.lower() == "oi")
-async def responder_oi(message: types.Message):
-    await message.answer("oi")
+@dp.message_handler(commands=['start'])
+async def start(msg: types.Message):
+    await msg.answer("Bot iniciado!")
 
-async def main():
-    print("Bot iniciado e rodando!")
-    await dp.start_polling(bot)
+@dp.message_handler(lambda msg: msg.text.lower() == "oi")
+async def responder(msg: types.Message):
+    await msg.answer("oi")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    executor.start_polling(dp)
