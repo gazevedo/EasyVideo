@@ -1,45 +1,58 @@
 import os
+import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-APP_URL = "https://easyvideo.onrender.com"  # Seu domínio Render
+APP_URL = "https://easyvideo.onrender.com"
 
 app = Flask(__name__)
 
-# Criar aplicação do Telegram
-application = Application.builder().token(TOKEN).build()
+# --- Cria loop asyncio em thread separada ---
+loop = asyncio.new_event_loop()
 
-# ---- HANDLERS ----
-def start(update: Update, context):
-    context.bot.send_message(chat_id=update.message.chat_id, text="Hello World!")
+def start_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
-application.add_handler(CommandHandler("start", start))
+threading.Thread(target=start_loop, daemon=True).start()
 
-# ---- WEBHOOK RECEBE UPDATE ----
+# --- Cria a Application (seu objeto principal) ---
+application = ApplicationBuilder().token(TOKEN).build()
+
+# --- Handler de exemplo ---
+async def hello(update: Update, context):
+    await update.message.reply_text("Hello World!")
+
+from telegram.ext import CommandHandler  # garante import explícito
+application.add_handler(CommandHandler("start", hello))
+
+# --- Webhook (rota síncrona do Flask) ---
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(), bot_app.bot)
-    bot_app.update_queue.put_nowait(update)
-    return "ok"
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
 
-# ---- HOME ----
-@app.route("/")
-def home():
+    # Envia a coroutine para o loop da thread sem bloquear o Flask
+    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
+    return "OK", 200
+
+@app.route("/", methods=["GET"])
+def index():
     return "Bot funcionando!", 200
 
-# ---- SET WEBHOOK AUTOMÁTICO ----
+# --- Configura webhook no Telegram, usando o loop da thread ---
+async def _set_webhook():
+    await application.bot.set_webhook(f"{APP_URL}/webhook")
+    print("Webhook configurado:", f"{APP_URL}/webhook")
+
+# schedule webhook setup on the background loop
+asyncio.run_coroutine_threadsafe(_set_webhook(), loop)
+
+# --- Start do Flask (Render vai usar essa entrada) ---
 if __name__ == "__main__":
-    import asyncio
-
-    async def setup():
-        url = f"{APP_URL}/webhook"
-        await application.bot.set_webhook(url)
-        print("Webhook configurado:", url)
-
-    asyncio.run(setup())
-
-    # Iniciar Flask
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
