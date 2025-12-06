@@ -1,41 +1,36 @@
+import os
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler
-import asyncio
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-WEBHOOK_URL = "https://easyvideo.onrender.com/webhook"
+APP_URL = "https://easyvideo.onrender.com"  # coloque o domínio do seu Render
 
 app = Flask(__name__)
-bot = Bot(token=TOKEN)
+bot_app = ApplicationBuilder().token(TOKEN).build()
 
-# Application (handler engine)
-application = Application.builder().token(TOKEN).build()
-
-# Comando /start
-async def start(update: Update, context):
+async def hello(update: Update, context):
     await update.message.reply_text("Hello World!")
 
-application.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("start", hello))
 
-# Rota do webhook (Render chama aqui)
-@app.post("/webhook")
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot)
-    asyncio.run(application.process_update(update))
-    return "OK", 200
+    update = Update.de_json(request.get_json(), bot_app.bot)
+    bot_app.update_queue.put_nowait(update)
+    return "ok"
 
-# Rota inicial (Render verifica vivo)
-@app.get("/")
-def index():
-    return "Bot running (Hello World)!", 200
+@app.route("/")
+def home():
+    return "Bot funcionando", 200
 
-# Seta o webhook na inicialização
 async def set_webhook():
-    await bot.delete_webhook()
-    await bot.set_webhook(url=WEBHOOK_URL)
+    url = f"{APP_URL}/webhook"
+    await bot_app.bot.set_webhook(url)
+    print("Webhook configurado:", url)
 
-@app.before_first_request
-def activate_webhook():
-    asyncio.run(set_webhook())
+import asyncio
+asyncio.get_event_loop().run_until_complete(set_webhook())
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
