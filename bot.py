@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher, executor, types
 import yt_dlp, os
 
-TOKEN = "COLOQUE_SEU_TOKEN_AQUI"
+TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
