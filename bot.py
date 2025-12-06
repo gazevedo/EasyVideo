@@ -1,37 +1,49 @@
 import os
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import Application, CommandHandler
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-WEBHOOK_URL = "https://easyvideo.onrender.com/webhook"
+APP_URL = "https://easyvideo.onrender.com"  # Seu domínio Render
 
 app = Flask(__name__)
 
-application = ApplicationBuilder().token(TOKEN).build()
+# Criar aplicação do Telegram
+application = Application.builder().token(TOKEN).build()
 
-async def start(update: Update, context):
-    await update.message.reply_text("Hello World!")
+# ---- HANDLERS ----
+def start(update: Update, context):
+    context.bot.send_message(chat_id=update.message.chat_id, text="Hello World!")
 
 application.add_handler(CommandHandler("start", start))
 
-@app.post("/webhook")
-async def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)   # <-- ESSENCIAL
-    return "OK"
+# ---- WEBHOOK RECEBE UPDATE ----
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    json_data = request.get_json()
+    update = Update.de_json(json_data, application.bot)
 
-@app.get("/")
+    # Processa o update (modo síncrono)
+    application.process_update(update)
+
+    return "ok", 200
+
+# ---- HOME ----
+@app.route("/")
 def home():
-    return "Bot funcionando!"
+    return "Bot funcionando!", 200
 
-async def set_webhook():
-    await application.bot.set_webhook(WEBHOOK_URL)
-    print("Webhook configurado!")
-
-import asyncio
-asyncio.run(set_webhook())
-
+# ---- SET WEBHOOK AUTOMÁTICO ----
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    import asyncio
+
+    async def setup():
+        url = f"{APP_URL}/webhook"
+        await application.bot.set_webhook(url)
+        print("Webhook configurado:", url)
+
+    asyncio.run(setup())
+
+    # Iniciar Flask
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
