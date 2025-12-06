@@ -1,41 +1,42 @@
-import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import yt_dlp
-import asyncio
+import os
 
 TOKEN = "COLOQUE_SEU_TOKEN_AQUI"
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Envie um link de vídeo que eu baixo pra você!")
 
-def baixar_video(url):
-    ydl_opts = {"outtmpl": "video.mp4"}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    return "video.mp4"
+async def baixar_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer("Envie o link do vídeo que deseja baixar!")
-
-@dp.message()
-async def baixar(message: Message):
-    url = message.text
-
-    await message.answer("⏳ Baixando vídeo...")
+    await update.message.reply_text("⏳ Baixando vídeo...")
 
     try:
-        arquivo = baixar_video(url)
-        await message.answer_video(open(arquivo, "rb"))
-        os.remove(arquivo)
+        ydl_opts = {
+            "outtmpl": "video.mp4",
+            "format": "mp4"
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        await update.message.reply_video("video.mp4")
+
+        os.remove("video.mp4")
+
     except Exception as e:
-        await message.answer(f"❌ Erro ao baixar: {e}")
+        await update.message.reply_text(f"Erro ao baixar: {e}")
 
 async def main():
-    await dp.start_polling(bot)
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT, baixar_video))
+
+    await app.run_polling()
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
