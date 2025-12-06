@@ -3,7 +3,7 @@ import asyncio
 import threading
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
@@ -22,12 +22,18 @@ threading.Thread(target=start_loop, daemon=True).start()
 # --- Cria a Application (seu objeto principal) ---
 application = ApplicationBuilder().token(TOKEN).build()
 
-# --- Handler de exemplo ---
+# --- Handler /start ---
 async def hello(update: Update, context):
     await update.message.reply_text("Hello World!")
 
-from telegram.ext import CommandHandler  # garante import explícito
 application.add_handler(CommandHandler("start", hello))
+
+# --- Handler para responder qualquer mensagem ---
+async def reply_any(update: Update, context):
+    texto = update.message.text
+    await update.message.reply_text(f"Você disse: {texto}")
+
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_any))
 
 # --- Webhook (rota síncrona do Flask) ---
 @app.route("/webhook", methods=["POST"])
@@ -35,24 +41,21 @@ def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, application.bot)
 
-    # Envia a coroutine para o loop da thread sem bloquear o Flask
     asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
     return "OK", 200
 
 @app.route("/", methods=["GET"])
 def index():
     return "Bot funcionando!", 200
 
-# --- Configura webhook no Telegram, usando o loop da thread ---
+# --- Configura webhook no Telegram ---
 async def _set_webhook():
     await application.bot.set_webhook(f"{APP_URL}/webhook")
     print("Webhook configurado:", f"{APP_URL}/webhook")
 
-# schedule webhook setup on the background loop
 asyncio.run_coroutine_threadsafe(_set_webhook(), loop)
 
-# --- Start do Flask (Render vai usar essa entrada) ---
+# --- Start Flask ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
