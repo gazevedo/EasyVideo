@@ -2,9 +2,10 @@ import os
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler
+import asyncio
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-APP_URL = "https://easyvideo.onrender.com"  # coloque o domínio do seu Render
+APP_URL = "https://easyvideo.onrender.com"
 
 app = Flask(__name__)
 bot_app = ApplicationBuilder().token(TOKEN).build()
@@ -17,7 +18,7 @@ bot_app.add_handler(CommandHandler("start", hello))
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(), bot_app.bot)
-    bot_app.update_queue.put_nowait(update)
+    asyncio.create_task(bot_app.process_update(update))
     return "ok"
 
 @app.route("/")
@@ -29,7 +30,6 @@ async def set_webhook():
     await bot_app.bot.set_webhook(url)
     print("Webhook configurado:", url)
 
-import asyncio
 asyncio.get_event_loop().run_until_complete(set_webhook())
 
 if __name__ == "__main__":
