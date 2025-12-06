@@ -1,37 +1,31 @@
-import os
-from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from flask import Flask, request
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-APP_URL = f"https://easyvideo.onrender.com"   # coloque seu domínio do Render
 
-app_bot = ApplicationBuilder().token(TOKEN).build()
+app = Flask(__name__)
 
-async def start(update: Update, context):
-    await update.message.reply_text("Oi! Seu bot está funcionando via Webhook 😄")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello World!")
 
-app_bot.add_handler(CommandHandler("start", start))
-
-flask_app = Flask(__name__)
-
-@flask_app.route("/webhook", methods=["POST"])
+@app.post("/webhook")
 def webhook():
-    update = Update.de_json(request.get_json(), app_bot.bot)
-    app_bot.update_queue.put_nowait(update)
-    return "ok", 200
+    application = app.config.get("application")
+    if application:
+        application.process_update(Update.de_json(request.json, application.bot))
+    return "OK", 200
 
-@flask_app.route("/")
-def home():
-    return "Bot ativo!", 200
+def main():
+    application = ApplicationBuilder().token(TOKEN).build()
 
-async def set_webhook():
-    webhook_url = f"{APP_URL}/webhook"
-    await app_bot.bot.set_webhook(webhook_url)
-    print("Webhook configurado para:", webhook_url)
+    application.add_handler(CommandHandler("start", start))
 
-import asyncio
-asyncio.get_event_loop().run_until_complete(set_webhook())
+    # Salvar aplicação Flask
+    app.config["application"] = application
+
+    # Iniciar polling em background para evitar timeout do Render
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    main()
