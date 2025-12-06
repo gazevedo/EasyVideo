@@ -2,55 +2,56 @@ import os
 import asyncio
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import Application, CommandHandler
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
 
 app = Flask(__name__)
 
-# Criar event loop MANUAL porque Flask não cria um
-event_loop = asyncio.new_event_loop()
-asyncio.set_event_loop(event_loop)
+# Criar event loop global
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
-# Iniciar aplicação PTB dentro do loop
-bot_app = ApplicationBuilder().token(TOKEN).build()
-event_loop.run_until_complete(bot_app.initialize())
-event_loop.run_until_complete(bot_app.start())
+# Criar Application PTB
+application = Application.builder().token(TOKEN).build()
 
-# --- HANDLER ---
+# Handler
 async def hello(update: Update, context):
     await update.message.reply_text("Hello World!")
 
-bot_app.add_handler(CommandHandler("start", hello))
+application.add_handler(CommandHandler("start", hello))
 
 
-# --- WEBHOOK ---
+# Rota do webhook
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    update = Update.de_json(data, bot_app.bot)
+    update = Update.de_json(data, application.bot)
 
-    # Processar update dentro do loop
-    event_loop.create_task(bot_app.process_update(update))
+    # PROCESSAMENTO CORRETO PARA PTB 21.6
+    loop.create_task(application.process_update(update))
 
-    return "ok"
+    return "ok", 200
 
 
-# --- HOME ---
 @app.route("/")
 def home():
-    return "Bot funcionando", 200
+    return "Bot funcionando!", 200
 
 
-# --- SET WEBHOOK ---
+# Configurar webhook
 async def set_webhook():
-    await bot_app.bot.set_webhook(f"{APP_URL}/webhook")
+    await application.bot.delete_webhook()
+    await application.bot.set_webhook(f"{APP_URL}/webhook")
     print("Webhook configurado!")
 
-event_loop.run_until_complete(set_webhook())
+
+# Inicializar PTB
+loop.run_until_complete(application.initialize())
+loop.run_until_complete(application.start())
+loop.run_until_complete(set_webhook())
 
 
-# --- START FLASK ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
