@@ -1,8 +1,9 @@
 services:
-  - type: web
-    name: EasyVideo
-    env: python
+  - name: easyvideo-bot
+    type: web
+    runtime: python3.10
+    region: oregon
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "./start.sh"
-    runtime: "python3.10"
+    autoDeploy: true
