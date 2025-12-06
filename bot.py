@@ -20,13 +20,9 @@ application.add_handler(CommandHandler("start", start))
 # ---- WEBHOOK RECEBE UPDATE ----
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    json_data = request.get_json()
-    update = Update.de_json(json_data, application.bot)
-
-    # Processa o update (modo síncrono)
-    application.process_update(update)
-
-    return "ok", 200
+    update = Update.de_json(request.get_json(), bot_app.bot)
+    bot_app.update_queue.put_nowait(update)
+    return "ok"
 
 # ---- HOME ----
 @app.route("/")
