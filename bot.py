@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -14,28 +15,26 @@ app = FastAPI()
 # ============================
 application = Application.builder().token(TOKEN).build()
 
+# Regex universal para detectar links
+URL_REGEX = r"(https?://[^\s]+)"
+
 
 # ============================
-# NOVA FUNÇÃO 100% FUNCIONAL — TIKWM
+# FUNÇÃO: Baixar TikTok (TIKWM)
 # ============================
 async def baixar_tiktok(url: str):
-    """
-    Baixa vídeo do TikTok usando API TIKWM (funciona no Render)
-    """
-
     try:
         url = url.strip()
-
         print(">> Link recebido:", url)
 
-        # 1) Resolver URL encurtada
+        # Resolver link encurtado
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resolved = await client.get(url)
             final_url = str(resolved.url)
 
         print(">> URL resolvida:", final_url)
 
-        # 2) Consultar API TIKWM
+        # Consultar API TIKWM
         api_url = "https://www.tikwm.com/api/"
         print(">> Enviando para API:", api_url)
 
@@ -51,10 +50,9 @@ async def baixar_tiktok(url: str):
             return None
 
         video_url = data["data"]["play"]
-
         print(">> URL final do vídeo:", video_url)
 
-        # 3) Baixar o vídeo
+        # Baixar vídeo
         async with httpx.AsyncClient(timeout=30) as client:
             video_bytes = await client.get(video_url)
 
@@ -75,31 +73,42 @@ async def baixar_tiktok(url: str):
 # ============================
 async def start(update: Update, context):
     print(">> /start recebido")
-    await update.message.reply_text("Bot online! Envie um link do TikTok.")
+    await update.message.reply_text("Bot online! Envie qualquer link.")
 
 
-async def process_link(update: Update, context):
-    text = update.message.text
+async def process_message(update: Update, context):
+    text = update.message.text.strip()
     print(">> Mensagem recebida:", text)
 
-    if "tiktok.com" not in text:
-        await update.message.reply_text("Envie um link válido do TikTok.")
+    # ---------- Só responde se houver link ----------
+    match = re.search(URL_REGEX, text)
+    if not match:
+        print(">> Mensagem ignorada (não contém link)")
+        return  # <-- IGNORA SEM RESPONDER
+
+    link = match.group(1)
+    print(">> Link detectado:", link)
+
+    # Se for link do TikTok → baixa vídeo
+    if "tiktok.com" in link or "vt.tiktok.com" in link:
+        await update.message.reply_text("⏳ Baixando vídeo do TikTok...")
+
+        arquivo = await baixar_tiktok(link)
+        if not arquivo:
+            await update.message.reply_text("❌ Erro ao baixar o vídeo.")
+            return
+
+        await update.message.reply_video(video=open(arquivo, "rb"))
+        os.remove(arquivo)
         return
 
-    await update.message.reply_text("⏳ Baixando vídeo...")
-
-    arquivo = await baixar_tiktok(text)
-
-    if not arquivo:
-        await update.message.reply_text("❌ Erro ao baixar o vídeo.")
-        return
-
-    await update.message.reply_video(video=open(arquivo, "rb"))
-    os.remove(arquivo)
+    # Se for qualquer outro link → responde normal
+    await update.message.reply_text(f"🔗 Link recebido:\n{link}")
 
 
+# Registrar handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_link))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
 
 
 # ============================
@@ -134,7 +143,6 @@ async def on_startup():
     print(">> Configurando webhook:", webhook_url)
 
     await application.bot.set_webhook(webhook_url)
-
     await application.start()
 
     print(">> Bot iniciado e webhook ativo!")
