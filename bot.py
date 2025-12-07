@@ -1,144 +1,119 @@
-import os
 import httpx
-from fastapi import FastAPI, Request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import re
 
-TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-APP_URL = "https://easyvideo.onrender.com"
-
-app = FastAPI()
-
-# ============================
-# APPLICATION GLOBAL (OBRIGATÓRIO)
-# ============================
-application = Application.builder().token(TOKEN).build()
+# ----------------------------------------------------------
+# EXTRAI O LINK DO TIKTOK DA MENSAGEM (mesmo se vier texto)
+# ----------------------------------------------------------
+def extrair_url(texto):
+    match = re.search(r'(https?://[^\s]+)', texto)
+    return match.group(1) if match else None
 
 
-# ============================
-# FUNÇÃO DE DOWNLOAD TIKTOK
-# ============================
-async def baixar_tiktok(url: str):
-    """
-    Baixa vídeo do TikTok usando API SnapTik, compatível com Render.
-    """
-
+# ==========================================================
+# 1️⃣ API TIKWM
+# ==========================================================
+async def api_tikwm(url):
     try:
-        url = url.strip()  # remove \n e espaços
+        print(">> [API TIKWM] Tentando...")
 
-        print(">> Link recebido:", url)
-
-        # 1) Resolver link encurtado
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resolved = await client.get(url)
             final_url = str(resolved.url)
 
-        print(">> URL resolvida:", final_url)
-
-        # 2) Consultar API SnapTik
-        api_url = f"https://api.snaptik.app/v1/tiktok/video?url={final_url}"
-        print(">> Consultando API:", api_url)
+        payload = {"url": final_url}
 
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(api_url)
+            r = await client.post("https://www.tikwm.com/api/", data=payload)
 
-        if resp.status_code != 200:
-            print(">> ERRO API:", resp.text)
+        data = r.json()
+        if data["code"] != 0:
+            print(">> [TIKWM] Falha:", data)
             return None
 
-        data = resp.json()
-        print(">> Resposta API:", data)
+        video_url = "https://www.tikwm.com" + data["data"]["play"]
 
-        video_url = data.get("video", {}).get("no_watermark")
-
-        if not video_url:
-            print(">> API não retornou vídeo válido")
-            return None
-
-        print(">> URL do vídeo:", video_url)
-
-        # 3) Baixar o vídeo final
         async with httpx.AsyncClient(timeout=20) as client:
-            video_bytes = await client.get(video_url)
+            v = await client.get(video_url)
 
-        filename = "video_tiktok.mp4"
+        filename = "video_tikwm.mp4"
         with open(filename, "wb") as f:
-            f.write(video_bytes.content)
+            f.write(v.content)
 
-        print(">> Vídeo salvo:", filename)
+        print(">> [TIKWM] Sucesso!")
         return filename
 
     except Exception as e:
-        print(">> ERRO NO DOWNLOAD:", e)
+        print(">> [TIKWM] Erro:", e)
         return None
 
 
-# ============================
-# HANDLERS DO TELEGRAM
-# ============================
-async def start(update: Update, context):
-    print(">> /start recebido")
-    await update.message.reply_text("Bot online! Envie um link do TikTok.")
+# ==========================================================
+# 2️⃣ API TIKMATE
+# ==========================================================
+async def api_tikmate(url):
+    try:
+        print(">> [API TIKMATE] Tentando...")
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
+            resolved = await client.get(url)
+            final_url = str(resolved.url)
+
+        api = f"https://api.tikmate.app/api/lookup?url={final_url}"
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(api)
+
+        data = r.json()
+
+        if "video_url" not in data:
+            print(">> [TIKMATE] Falha:", data)
+            return None
+
+        video_url = f"https://tikmate.app/download/{data['token']}/{data['video_id']}.mp4"
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            v = await client.get(video_url)
+
+        filename = "video_tikmate.mp4"
+        with open(filename, "wb") as f:
+            f.write(v.content)
+
+        print(">> [TIKMATE] Sucesso!")
+        return filename
+
+    except Exception as e:
+        print(">> [TIKMATE] Erro:", e)
+        return None
 
 
-async def process_link(update: Update, context):
-    text = update.message.text
-    print(">> Mensagem recebida:", text)
+# ==========================================================
+# 3️⃣ API TTSAVE
+# (funciona via POST e retorna JSON com URL final)
+# ==========================================================
+async def api_ttsave(url):
+    try:
+        print(">> [API TTSAVE] Tentando...")
 
-    if "tiktok.com" not in text:
-        await update.message.reply_text("Envie um link válido do TikTok.")
-        return
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post("https://ttsave.app/download", data={"url": url})
 
-    await update.message.reply_text("⏳ Baixando vídeo...")
+        data = r.json()
 
-    arquivo = await baixar_tiktok(text)
+        if "videourl" not in data:
+            print(">> [TTSAVE] Falha:", data)
+            return None
 
-    if not arquivo:
-        await update.message.reply_text("❌ Erro ao baixar o vídeo.")
-        return
+        video_url = data["videourl"]
 
-    await update.message.reply_video(video=open(arquivo, "rb"))
-    os.remove(arquivo)
+        async with httpx.AsyncClient(timeout=20) as client:
+            v = await client.get(video_url)
 
+        filename = "video_ttsave.mp4"
+        with open(filename, "wb") as f:
+            f.write(v.content)
 
-# Registrar handlers
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_link))
+        print(">> [TTSAVE] Sucesso!")
+        return filename
 
-
-# ============================
-# WEBHOOK
-# ============================
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    print(">> RAW UPDATE:", data)
-
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-
-    return {"status": "ok"}
-
-
-@app.get("/")
-async def home():
-    return {"status": "running"}
-
-
-# ============================
-# STARTUP ESSENCIAL NO RENDER
-# ============================
-@app.on_event("startup")
-async def on_startup():
-    print(">> Inicializando o bot...")
-
-    await application.initialize()
-
-    webhook_url = f"{APP_URL}/webhook"
-    print(">> Configurando webhook:", webhook_url)
-
-    await application.bot.set_webhook(webhook_url)
-
-    await application.start()
-
-    print(">> Bot iniciado e webhook ativo!")
+    except Exception as e:
+        print(">> [TTSAVE] Erro:", e)
