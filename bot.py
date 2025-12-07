@@ -10,33 +10,59 @@ APP_URL = "https://easyvideo.onrender.com"
 
 app = FastAPI()
 
-# ============================
-# APPLICATION GLOBAL
-# ============================
 application = Application.builder().token(TOKEN).build()
 
-# Regex universal para detectar links
 URL_REGEX = r"(https?://[^\s]+)"
 
 
 # ============================
-# FUNÇÃO: Baixar TikTok (TIKWM)
+# SHOPEE DOWNLOADER
+# ============================
+async def baixar_shopee(url: str):
+    try:
+        api = f"https://shopee-api.naikmimpi.my.id/?url={url}"
+        print(">> Consultando API SHOPEE:", api)
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(api)
+
+        print(">> RAW SHOPEE RESPONSE:", resp.text)
+
+        if resp.status_code != 200:
+            return None
+
+        data = resp.json()
+        if data.get("status") != "success":
+            return None
+
+        result = data.get("result", {})
+
+        # Coleta imagens e vídeo
+        images = result.get("images", [])
+        video = result.get("video_url")
+
+        return {"images": images, "video": video}
+
+    except Exception as e:
+        print(">> ERRO SHOPEE:", e)
+        return None
+
+
+# ============================
+# TIKTOK DOWNLOADER (TIKWM)
 # ============================
 async def baixar_tiktok(url: str):
     try:
         url = url.strip()
         print(">> Link recebido:", url)
 
-        # Resolver link encurtado
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resolved = await client.get(url)
             final_url = str(resolved.url)
 
         print(">> URL resolvida:", final_url)
 
-        # Consultar API TIKWM
         api_url = "https://www.tikwm.com/api/"
-        print(">> Enviando para API:", api_url)
 
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(api_url, data={"url": final_url})
@@ -44,15 +70,11 @@ async def baixar_tiktok(url: str):
         print(">> RAW API RESPONSE:", resp.text)
 
         data = resp.json()
-
         if data.get("code") != 0:
-            print(">> API retornou erro:", data)
             return None
 
         video_url = data["data"]["play"]
-        print(">> URL final do vídeo:", video_url)
 
-        # Baixar vídeo
         async with httpx.AsyncClient(timeout=30) as client:
             video_bytes = await client.get(video_url)
 
@@ -60,7 +82,6 @@ async def baixar_tiktok(url: str):
         with open(filename, "wb") as f:
             f.write(video_bytes.content)
 
-        print(">> Arquivo salvo:", filename)
         return filename
 
     except Exception as e:
@@ -69,29 +90,55 @@ async def baixar_tiktok(url: str):
 
 
 # ============================
-# HANDLERS TELEGRAM
+# PROCESSADOR DE MENSAGEM
 # ============================
-async def start(update: Update, context):
-    print(">> /start recebido")
-    await update.message.reply_text("Bot online! Envie qualquer link.")
-
-
 async def process_message(update: Update, context):
     text = update.message.text.strip()
     print(">> Mensagem recebida:", text)
 
-    # ---------- Só responde se houver link ----------
     match = re.search(URL_REGEX, text)
     if not match:
-        print(">> Mensagem ignorada (não contém link)")
-        return  # <-- IGNORA SEM RESPONDER
+        return
 
     link = match.group(1)
     print(">> Link detectado:", link)
 
-    # Se for link do TikTok → baixa vídeo
+    # ---------- SHOPEE ----------
+    if "shopee.com" in link:
+        await update.message.reply_text("🛒 Baixando mídia da Shopee...")
+
+        data = await baixar_shopee(link)
+        if not data:
+            await update.message.reply_text("❌ Não consegui baixar mídia da Shopee.")
+            return
+
+        # Vídeo
+        if data.get("video"):
+            async with httpx.AsyncClient() as client:
+                video_bytes = await client.get(data["video"])
+            with open("shopee_video.mp4", "wb") as f:
+                f.write(video_bytes.content)
+
+            await update.message.reply_video(video=open("shopee_video.mp4", "rb"))
+            os.remove("shopee_video.mp4")
+
+        # Imagens
+        for i, img in enumerate(data.get("images", [])):
+            async with httpx.AsyncClient() as client:
+                img_bytes = await client.get(img)
+
+            filename = f"shopee_img_{i}.jpg"
+            with open(filename, "wb") as f:
+                f.write(img_bytes.content)
+
+            await update.message.reply_photo(photo=open(filename, "rb"))
+            os.remove(filename)
+
+        return
+
+    # ---------- TIKTOK ----------
     if "tiktok.com" in link or "vt.tiktok.com" in link:
-        await update.message.reply_text("⏳ Baixando vídeo do TikTok...")
+        await update.message.reply_text("🎥 Baixando vídeo do TikTok...")
 
         arquivo = await baixar_tiktok(link)
         if not arquivo:
@@ -102,12 +149,12 @@ async def process_message(update: Update, context):
         os.remove(arquivo)
         return
 
-    # Se for qualquer outro link → responde normal
+    # ---------- QUALQUER OUTRO LINK ----------
     await update.message.reply_text(f"🔗 Link recebido:\n{link}")
 
 
 # Registrar handlers
-application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("Bot online!")))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
 
 
@@ -117,11 +164,8 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print(">> RAW UPDATE:", data)
-
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
-
     return {"status": "ok"}
 
 
@@ -130,19 +174,10 @@ async def home():
     return {"status": "running"}
 
 
-# ============================
-# STARTUP RENDER
-# ============================
 @app.on_event("startup")
 async def on_startup():
-    print(">> Inicializando o bot...")
-
+    print(">> Inicializando bot...")
     await application.initialize()
-
-    webhook_url = f"{APP_URL}/webhook"
-    print(">> Configurando webhook:", webhook_url)
-
-    await application.bot.set_webhook(webhook_url)
+    await application.bot.set_webhook(f"{APP_URL}/webhook")
     await application.start()
-
-    print(">> Bot iniciado e webhook ativo!")
+    print(">> Bot ativo!")
