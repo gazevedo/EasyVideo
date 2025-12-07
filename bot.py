@@ -10,59 +10,56 @@ APP_URL = "https://easyvideo.onrender.com"
 app = FastAPI()
 
 # ============================
-# APPLICATION GLOBAL
+# APPLICATION GLOBAL (OBRIGATÓRIO)
 # ============================
 application = Application.builder().token(TOKEN).build()
 
 
 # ============================
-# NOVA FUNÇÃO 100% FUNCIONAL — TIKWM
+# FUNÇÃO DE DOWNLOAD TIKTOK
 # ============================
 async def baixar_tiktok(url: str):
-    """
-    Baixa vídeo do TikTok usando API TIKWM (funciona no Render)
-    """
-
     try:
         url = url.strip()
-
         print(">> Link recebido:", url)
 
-        # 1) Resolver URL encurtada
+        # 1) Resolver link encurtado
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resolved = await client.get(url)
             final_url = str(resolved.url)
 
         print(">> URL resolvida:", final_url)
 
-        # 2) Consultar API TIKWM
-        api_url = "https://www.tikwm.com/api/"
-        print(">> Enviando para API:", api_url)
+        # 2) Consultar API SnapTik
+        api_url = f"https://api.snaptik.app/v1/tiktok/video?url={final_url}"
+        print(">> Consultando API:", api_url)
 
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(api_url, data={"url": final_url})
+            resp = await client.get(api_url)
 
-        print(">> RAW API RESPONSE:", resp.text)
-
-        data = resp.json()
-
-        if data.get("code") != 0:
-            print(">> API retornou erro:", data)
+        if resp.status_code != 200:
+            print(">> ERRO API:", resp.text)
             return None
 
-        video_url = data["data"]["play"]
+        data = resp.json()
+        print(">> Resposta API:", data)
 
-        print(">> URL final do vídeo:", video_url)
+        video_url = data.get("video", {}).get("no_watermark")
 
-        # 3) Baixar o vídeo
-        async with httpx.AsyncClient(timeout=30) as client:
+        if not video_url:
+            print(">> API não retornou vídeo válido")
+            return None
+
+        print(">> URL do vídeo:", video_url)
+
+        # 3) Baixar o vídeo final
+        async with httpx.AsyncClient(timeout=20) as client:
             video_bytes = await client.get(video_url)
 
         filename = "video_tiktok.mp4"
         with open(filename, "wb") as f:
             f.write(video_bytes.content)
 
-        print(">> Arquivo salvo:", filename)
         return filename
 
     except Exception as e:
@@ -71,7 +68,7 @@ async def baixar_tiktok(url: str):
 
 
 # ============================
-# HANDLERS TELEGRAM
+# HANDLERS DO TELEGRAM
 # ============================
 async def start(update: Update, context):
     print(">> /start recebido")
@@ -81,10 +78,6 @@ async def start(update: Update, context):
 async def process_link(update: Update, context):
     text = update.message.text
     print(">> Mensagem recebida:", text)
-
-    if "tiktok.com" not in text:
-        await update.message.reply_text("Envie um link válido do TikTok.")
-        return
 
     await update.message.reply_text("⏳ Baixando vídeo...")
 
@@ -98,8 +91,16 @@ async def process_link(update: Update, context):
     os.remove(arquivo)
 
 
+# Registrar handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_link))
+
+# RESPONDE APENAS SE FOR LINK TIKTOK
+application.add_handler(
+    MessageHandler(
+        filters.Regex(r"(tiktok\.com|vt\.tiktok\.com)") & ~filters.COMMAND,
+        process_link
+    )
+)
 
 
 # ============================
@@ -122,7 +123,7 @@ async def home():
 
 
 # ============================
-# STARTUP RENDER
+# STARTUP ESSENCIAL NO RENDER
 # ============================
 @app.on_event("startup")
 async def on_startup():
@@ -137,4 +138,4 @@ async def on_startup():
 
     await application.start()
 
-    print(">> Bot iniciado e webhook ativo!") 
+    print(">> Bot iniciado e webhook ativo!")
