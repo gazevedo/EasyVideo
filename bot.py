@@ -1,76 +1,51 @@
 import os
 import asyncio
 from fastapi import FastAPI, Request
-import uvicorn
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
 
 app = FastAPI()
 
-# --- Criar Application ---
-application = ApplicationBuilder().token(TOKEN).build()
+# --- cria a aplicação do Telegram
+application = Application.builder().token(TOKEN).build()
 
-# --- Handlers ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(">>> RECEBIDO /start DE:", update.message.from_user.id)
-    print(">>> TEXTO:", update.message.text)
-
+# --- handler do /start
+async def start(update: Update, context):
+    print("Recebi /start de:", update.effective_user.id)
     await update.message.reply_text("Hello World!")
 
-    print(">>> RESPOSTA ENVIADA: Hello World!")
+# --- handler para qualquer mensagem
+async def echo(update: Update, context):
+    print("Mensagem recebida:", update.message.text)
+    await update.message.reply_text("Recebido!")
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user.id
-    msg = update.message.text
-
-    print(">>> MENSAGEM RECEBIDA:")
-    print("    Usuário:", user)
-    print("    Texto:", msg)
-
-    resposta = f"Você disse: {msg}"
-    await update.message.reply_text(resposta)
-
-    print(">>> RESPOSTA ENVIADA:", resposta)
-
-
-# Registrar handlers
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-
-# --- Webhook ---
+# --- ROUTE DO WEBHOOK
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-
-    print(">>> PACOTE JSON RECEBIDO NO WEBHOOK:")
-    print(data)
+    print("Webhook recebeu:", data)
 
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
 
-    return {"ok": True}
-
-
-@app.get("/")
-async def root():
     return {"status": "ok"}
 
+@app.get("/")
+async def home():
+    return {"status": "running"}
 
-# --- Configurar webhook no início ---
+# --- CONFIGURA O WEBHOOK AO INICIAR ---
 async def set_webhook():
     url = f"{APP_URL}/webhook"
+    print("Configurando webhook:", url)
     await application.bot.set_webhook(url)
-    print(">>> WEBHOOK DEFINIDO PARA:", url)
 
-
-asyncio.get
+@app.on_event("startup")
+async def startup_event():
+    await set_webhook()
