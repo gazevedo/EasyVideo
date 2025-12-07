@@ -1,114 +1,63 @@
-import os
-import re
 import httpx
-from fastapi import FastAPI, Request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import re
 
 
-TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
-APP_URL = "https://easyvideo.onrender.com"
-
-
-# ======================================================
-# FASTAPI APP (ISTO PRECISA EXISTIR)
-# ======================================================
-app = FastAPI()
-
-
-# ======================================================
-# TELEGRAM APPLICATION
-# ======================================================
-application = Application.builder().token(TOKEN).build()
-
-
-# ======================================================
-# Funções auxiliares
-# ======================================================
 def extrair_url(texto):
     match = re.search(r"(https?://[^\s]+)", texto)
     return match.group(1) if match else None
 
 
-# ======================================================
-# 1️⃣ API TIKWM
-# ======================================================
-async def api_tikwm(url):
-    try:
-        print(">> [API TIKWM] Tentando...")
+async def download_tikwm(url_original):
+    print(">> TIKWM: iniciando download para:", url_original)
 
+    # Primeiro vamos resolver possíveis links curtos
+    try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-            r = await client.get("https://www.tikwm.com/api/", params={"url": url})
+            req = await client.get(url_original)
+            url_final = str(req.url)
+            print(">> URL FINAL:", url_final)
+    except Exception as e:
+        print(">> ERRO ao resolver URL:", e)
+        return None, "Erro ao resolver URL"
+
+    # Agora vamos chamar a API do TIKWM
+    api_url = "https://www.tikwm.com/api/"
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(api_url, data={"url": url_final})
 
         data = r.json()
-        if data["code"] != 0:
-            return None
+        print(">> RESPOSTA API TIKWM:", data)
 
-        video_url = "https://www.tikwm.com" + data["data"]["play"]
+    except Exception as e:
+        print(">> ERRO chamada API TIKWM:", e)
+        return None, "Erro ao consultar API TIKWM"
 
-        async with httpx.AsyncClient(timeout=20) as client:
+    # Verificar se a API retornou OK
+    if data.get("code") != 0:
+        return None, f"Erro da API TIKWM: {data.get('msg')}"
+
+    try:
+        video_path = data["data"]["play"]
+        video_url = "https://www.tikwm.com" + video_path
+        print(">> URL DO VÍDEO:", video_url)
+    except Exception as e:
+        print(">> ERRO ao extrair link do vídeo:", e)
+        return None, "Erro ao extrair link do vídeo"
+
+    # Baixar arquivo
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
             vid = await client.get(video_url)
 
         filename = "video_tikwm.mp4"
         with open(filename, "wb") as f:
             f.write(vid.content)
 
-        return filename
+        print(">> VÍDEO BAIXADO:", filename)
+        return filename, None
 
-    except:
-        return None
-
-
-# ======================================================
-# 2️⃣ API TIKMATE
-# ======================================================
-async def api_tikmate(url):
-    try:
-        print(">> [API TIKMATE] Tentando...")
-
-        api = f"https://api.tikmate.app/api/lookup?url={url}"
-
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(api)
-
-        data = r.json()
-        if "video_id" not in data:
-            return None
-
-        video_url = f"https://tikmate.app/download/{data['token']}/{data['video_id']}.mp4"
-
-        async with httpx.AsyncClient(timeout=20) as client:
-            vid = await client.get(video_url)
-
-        filename = "video_tikmate.mp4"
-        with open(filename, "wb") as f:
-            f.write(vid.content)
-
-        return filename
-
-    except:
-        return None
-
-
-# ======================================================
-# TRY ALL APIs
-# ======================================================
-async def baixar_video_tiktok(texto):
-    url = extrair_url(texto)
-    if not url:
-        return None, "Nenhum link encontrado."
-
-    APIS = [api_tikwm, api_tikmate]
-
-    for api in APIS:
-        arquivo = await api(url)
-        if arquivo:
-            return arquivo, None
-
-    return None, "Nenhuma API funcionou."
-
-
-# ======================================================
-# Handlers do bot
-# ======================================================
-async def
+    except Exception as e:
+        print(">> ERRO ao baixar vídeo:", e)
+        return None, "Erro ao baixar vídeo"
