@@ -3,14 +3,21 @@ import asyncio
 import threading
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters
+)
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
 
 app = Flask(__name__)
 
-# --- Cria loop asyncio em thread separada ---
+# ============================================
+# LOOP ASSÍNCRONO EM THREAD SEPARADA
+# ============================================
 loop = asyncio.new_event_loop()
 
 def start_loop():
@@ -19,43 +26,56 @@ def start_loop():
 
 threading.Thread(target=start_loop, daemon=True).start()
 
-# --- Cria a Application (seu objeto principal) ---
+# ============================================
+# CRIA APPLICATION DO TELEGRAM
+# ============================================
 application = ApplicationBuilder().token(TOKEN).build()
 
-# --- Handler /start ---
-async def hello(update: Update, context):
-    await update.message.reply_text("Hello World!")
+# ============================================
+# HANDLER /start
+# ============================================
+async def start(update: Update, context):
+    await update.message.reply_text("Bot ONLINE!")
 
-application.add_handler(CommandHandler("start", hello))
+application.add_handler(CommandHandler("start", start))
 
-# --- Handler para responder qualquer mensagem ---
-async def reply_any(update: Update, context):
-    texto = update.message.text
-    await update.message.reply_text(f"Você disse: {texto}")
+# ============================================
+# HANDLER PARA QUALQUER TEXTO
+# ============================================
+async def eco(update: Update, context):
+    await update.message.reply_text(f"Você disse: {update.message.text}")
 
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_any))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, eco))
 
-# --- Webhook (rota síncrona do Flask) ---
+# ============================================
+# FLASK WEBHOOK
+# ============================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, application.bot)
 
+    # ESSA LINHA É A MAIS IMPORTANTE DO ARQUIVO TODO
     asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
     return "OK", 200
 
 @app.route("/", methods=["GET"])
-def index():
+def home():
     return "Bot funcionando!", 200
 
-# --- Configura webhook no Telegram ---
-async def _set_webhook():
+# ============================================
+# CONFIGURA O WEBHOOK AO INICIAR
+# ============================================
+async def set_webhook():
     await application.bot.set_webhook(f"{APP_URL}/webhook")
-    print("Webhook configurado:", f"{APP_URL}/webhook")
+    print("Webhook configurado!")
 
-asyncio.run_coroutine_threadsafe(_set_webhook(), loop)
+asyncio.run_coroutine_threadsafe(set_webhook(), loop)
 
-# --- Start Flask ---
+# ============================================
+# INICIA FLASK
+# ============================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
