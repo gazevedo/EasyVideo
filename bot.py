@@ -9,85 +9,59 @@ APP_URL = "https://easyvideo.onrender.com"
 
 app = FastAPI()
 
-# Criar Application global
+# ============================
+# APPLICATION GLOBAL (OBRIGATÓRIO)
+# ============================
 application = Application.builder().token(TOKEN).build()
 
 
-# ============================================================
-# ---------------------- HANDLERS -----------------------------
-# ============================================================
-
-async def start(update: Update, context):
-    print(">> START recebido de:", update.effective_user.id)
-    await update.message.reply_text("Bot online! Envie qualquer texto ou link do TikTok.")
-
-
-async def echo(update: Update, context):
-    msg = update.message.text
-    print(">> Mensagem recebida:", msg)
-
-    # --- Detecta se é link TikTok ---
-    if "tiktok.com" in msg:
-        await update.message.reply_text("⏳ Baixando vídeo do TikTok...")
-
-        video_path = await baixar_tiktok(msg)
-
-        if video_path:
-            print(">> Enviando vídeo baixado:", video_path)
-            await update.message.reply_video(video=open(video_path, "rb"))
-            os.remove(video_path)
-        else:
-            await update.message.reply_text("❌ Erro ao baixar o vídeo.")
-
-        return
-
-    # Se não for TikTok → resposta normal
-    await update.message.reply_text("Recebido: " + msg)
-
-
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-
-
-# ============================================================
-# ------------------ FUNÇÃO DOWNLOAD TIKTOK ------------------
-# ============================================================
-
+# ============================
+# FUNÇÃO DE DOWNLOAD TIKTOK
+# ============================
 async def baixar_tiktok(url: str):
     """
-    Faz download de vídeo TikTok sem marca d’água.
-    Usa API estável: https://api.tikmate.app
+    Baixa vídeo do TikTok usando API SnapTik, compatível com Render.
     """
 
     try:
-        # 1) Resolve a URL final (short links dai / vt)
+        url = url.strip()  # remove \n e espaços
+
+        print(">> Link recebido:", url)
+
+        # 1) Resolver link encurtado
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-            final_url = (await client.get(url)).url.__str__()
-            print(">> URL resolvida:", final_url)
+            resolved = await client.get(url)
+            final_url = str(resolved.url)
 
-        # 2) Pega ID do vídeo
-        video_id = final_url.split("/video/")[1].split("?")[0]
+        print(">> URL resolvida:", final_url)
 
-        api_url = f"https://api.tikmate.app/api/lookup?url={final_url}"
+        # 2) Consultar API SnapTik
+        api_url = f"https://api.snaptik.app/v1/tiktok/video?url={final_url}"
         print(">> Consultando API:", api_url)
 
         async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(api_url)
-            info = r.json()
+            resp = await client.get(api_url)
 
-        if "token" not in info:
-            print(">> Erro API Tikmate:", info)
+        if resp.status_code != 200:
+            print(">> ERRO API:", resp.text)
             return None
 
-        token = info["token"]
-        download_url = f"https://tikmate.app/download/{token}/{video_id}.mp4"
-        print(">> URL de download:", download_url)
+        data = resp.json()
+        print(">> Resposta API:", data)
 
-        # 3) Baixar arquivo
+        video_url = data.get("video", {}).get("no_watermark")
+
+        if not video_url:
+            print(">> API não retornou vídeo válido")
+            return None
+
+        print(">> URL do vídeo:", video_url)
+
+        # 3) Baixar o vídeo final
         async with httpx.AsyncClient(timeout=20) as client:
-            video_bytes = await client.get(download_url)
+            video_bytes = await client.get(video_url)
 
-        filename = f"tiktok_{video_id}.mp4"
+        filename = "video_tiktok.mp4"
         with open(filename, "wb") as f:
             f.write(video_bytes.content)
 
@@ -99,10 +73,42 @@ async def baixar_tiktok(url: str):
         return None
 
 
-# ============================================================
-# ---------------------- WEBHOOK ------------------------------
-# ============================================================
+# ============================
+# HANDLERS DO TELEGRAM
+# ============================
+async def start(update: Update, context):
+    print(">> /start recebido")
+    await update.message.reply_text("Bot online! Envie um link do TikTok.")
 
+
+async def process_link(update: Update, context):
+    text = update.message.text
+    print(">> Mensagem recebida:", text)
+
+    if "tiktok.com" not in text:
+        await update.message.reply_text("Envie um link válido do TikTok.")
+        return
+
+    await update.message.reply_text("⏳ Baixando vídeo...")
+
+    arquivo = await baixar_tiktok(text)
+
+    if not arquivo:
+        await update.message.reply_text("❌ Erro ao baixar o vídeo.")
+        return
+
+    await update.message.reply_video(video=open(arquivo, "rb"))
+    os.remove(arquivo)
+
+
+# Registrar handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_link))
+
+
+# ============================
+# WEBHOOK
+# ============================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -119,10 +125,9 @@ async def home():
     return {"status": "running"}
 
 
-# ============================================================
-# ---------------------- STARTUP ------------------------------
-# ============================================================
-
+# ============================
+# STARTUP ESSENCIAL NO RENDER
+# ============================
 @app.on_event("startup")
 async def on_startup():
     print(">> Inicializando o bot...")
@@ -130,7 +135,8 @@ async def on_startup():
     await application.initialize()
 
     webhook_url = f"{APP_URL}/webhook"
-    print(">> Configurando webhook para:", webhook_url)
+    print(">> Configurando webhook:", webhook_url)
+
     await application.bot.set_webhook(webhook_url)
 
     await application.start()
