@@ -1,81 +1,76 @@
 import os
 import asyncio
-import threading
-from flask import Flask, request
+from fastapi import FastAPI, Request
+import uvicorn
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    ContextTypes,
     filters
 )
 
 TOKEN = "8010976316:AAEpXdsLrbUUKqye66OI41LrQaTEc7RAuAk"
 APP_URL = "https://easyvideo.onrender.com"
 
-app = Flask(__name__)
+app = FastAPI()
 
-# ============================================
-# LOOP ASSÍNCRONO EM THREAD SEPARADA
-# ============================================
-loop = asyncio.new_event_loop()
-
-def start_loop():
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
-
-threading.Thread(target=start_loop, daemon=True).start()
-
-# ============================================
-# CRIA APPLICATION DO TELEGRAM
-# ============================================
+# --- Criar Application ---
 application = ApplicationBuilder().token(TOKEN).build()
 
-# ============================================
-# HANDLER /start
-# ============================================
-async def start(update: Update, context):
-    await update.message.reply_text("Bot ONLINE!")
+# --- Handlers ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(">>> RECEBIDO /start DE:", update.message.from_user.id)
+    print(">>> TEXTO:", update.message.text)
 
+    await update.message.reply_text("Hello World!")
+
+    print(">>> RESPOSTA ENVIADA: Hello World!")
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user.id
+    msg = update.message.text
+
+    print(">>> MENSAGEM RECEBIDA:")
+    print("    Usuário:", user)
+    print("    Texto:", msg)
+
+    resposta = f"Você disse: {msg}"
+    await update.message.reply_text(resposta)
+
+    print(">>> RESPOSTA ENVIADA:", resposta)
+
+
+# Registrar handlers
 application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# ============================================
-# HANDLER PARA QUALQUER TEXTO
-# ============================================
-async def eco(update: Update, context):
-    await update.message.reply_text(f"Você disse: {update.message.text}")
 
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, eco))
+# --- Webhook ---
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
 
-# ============================================
-# FLASK WEBHOOK
-# ============================================
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json(force=True)
+    print(">>> PACOTE JSON RECEBIDO NO WEBHOOK:")
+    print(data)
+
     update = Update.de_json(data, application.bot)
+    await application.process_update(update)
 
-    # ESSA LINHA É A MAIS IMPORTANTE DO ARQUIVO TODO
-    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+    return {"ok": True}
 
-    return "OK", 200
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot funcionando!", 200
+@app.get("/")
+async def root():
+    return {"status": "ok"}
 
-# ============================================
-# CONFIGURA O WEBHOOK AO INICIAR
-# ============================================
+
+# --- Configurar webhook no início ---
 async def set_webhook():
-    await application.bot.set_webhook(f"{APP_URL}/webhook")
-    print("Webhook configurado!")
+    url = f"{APP_URL}/webhook"
+    await application.bot.set_webhook(url)
+    print(">>> WEBHOOK DEFINIDO PARA:", url)
 
-asyncio.run_coroutine_threadsafe(set_webhook(), loop)
 
-# ============================================
-# INICIA FLASK
-# ============================================
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+asyncio.get
