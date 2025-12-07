@@ -137,4 +137,4 @@ async def on_startup():
 
     await application.start()
 
-    print(">> Bot iniciado e webhook ativo!")
+    print(">> Bot iniciado e webhook ativo!") 
