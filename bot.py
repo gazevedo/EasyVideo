@@ -1,5 +1,4 @@
 import os
-import asyncio
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -9,43 +8,56 @@ APP_URL = "https://easyvideo.onrender.com"
 
 app = FastAPI()
 
-# --- cria a aplicação do Telegram
+# Criar Application global
 application = Application.builder().token(TOKEN).build()
 
-# --- handler do /start
-async def start(update: Update, context):
-    print("Recebi /start de:", update.effective_user.id)
-    await update.message.reply_text("Hello World!")
 
-# --- handler para qualquer mensagem
+# ---------------------- HANDLERS --------------------------
+async def start(update: Update, context):
+    print(">> START recebido de:", update.effective_user.id)
+    await update.message.reply_text("Bot online! Pode enviar mensagens.")
+
+
 async def echo(update: Update, context):
-    print("Mensagem recebida:", update.message.text)
-    await update.message.reply_text("Recebido!")
+    print(">> Mensagem recebida:", update.message.text)
+    await update.message.reply_text("Recebido: " + update.message.text)
+
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# --- ROUTE DO WEBHOOK
+
+# ---------------------- WEBHOOK ----------------------------
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print("Webhook recebeu:", data)
+    print(">> RAW UPDATE:", data)
 
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
 
     return {"status": "ok"}
 
+
 @app.get("/")
 async def home():
     return {"status": "running"}
 
-# --- CONFIGURA O WEBHOOK AO INICIAR ---
-async def set_webhook():
-    url = f"{APP_URL}/webhook"
-    print("Configurando webhook:", url)
-    await application.bot.set_webhook(url)
 
+# ---------------------- STARTUP (ESSENCIAL!) ----------------
 @app.on_event("startup")
-async def startup_event():
-    await set_webhook()
+async def on_startup():
+    print(">> Inicializando o bot...")
+
+    # Inicializa as tarefas internas do PTB (necessário para webhook)
+    await application.initialize()
+
+    # Configura webhook
+    webhook_url = f"{APP_URL}/webhook"
+    print(">> Configurando webhook para:", webhook_url)
+    await application.bot.set_webhook(webhook_url)
+
+    # Inicia o Application (necessário para process_update funcionar)
+    await application.start()
+
+    print(">> Bot iniciado e webhook ativo!")
