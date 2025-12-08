@@ -1,2 +1,1 @@
-#!/bin/bash
-python3 bot.py
+uvicorn bot:app --host 0.0.0.0 --port $PORT
