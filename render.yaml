@@ -4,6 +4,16 @@ services:
     runtime: python3.10
     region: oregon
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "./start.sh"
     autoDeploy: true
+
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install --with-deps chromium
+
+    startCommand: ./start.sh
+
+    envVars:
+      - key: TOKEN
+        sync: false
+      - key: PLAYWRIGHT
+        value: "1"
