@@ -200,4 +200,4 @@ async def on_startup():
     print(">> Configurando Webhook:", url)
     await application.bot.set_webhook(url)
     await application.start()
-    print(">> Bot iniciado e webhook ativo!")
+    print(">> Bot iniciado e webhookativo!")
