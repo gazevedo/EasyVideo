@@ -4,24 +4,23 @@ from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# ============================
+# ==========================================
 # VARIÁVEIS DE AMBIENTE
-# ============================
+# ==========================================
 TOKEN = os.getenv("TOKEN")
 APP_URL = os.getenv("APP_URL")
-
-USE_PLAYWRIGHT = int(os.getenv("USE_PLAYWRIGHT", "0"))
-SHOPEE_USERNAME = os.getenv("SHOPEE_USERNAME")
-SHOPEE_PASSWORD = os.getenv("SHOPEE_PASSWORD")
+USE_PLAYWRIGHT = int(os.getenv("USE_PLAYWRIGHT", "1"))  # 1 = usar Playwright se APIs falharem
 
 app = FastAPI()
 
-# Application global obrigatório
+# ==========================================
+# TELEGRAM APPLICATION GLOBAL
+# ==========================================
 application = Application.builder().token(TOKEN).build()
 
-# ============================
-# 1) TIKTOK - API TIKWM
-# ============================
+# ==========================================
+# 1) TIKTOK via API TIKWM
+# ==========================================
 async def baixar_tiktok(url: str):
     try:
         print(">> TIKTOK recebido:", url)
@@ -60,9 +59,9 @@ async def baixar_tiktok(url: str):
         return None
 
 
-# ============================
-# 2) SHOPEE - APIs GRATUITAS
-# ============================
+# ==========================================
+# 2) SHOPEE — TENTAR VÁRIAS APIS
+# ==========================================
 async def tentar_shopee_api(url: str):
     api_list = [
         "https://api.saveshopee.com/v1/info?url=",
@@ -74,18 +73,16 @@ async def tentar_shopee_api(url: str):
         for api in api_list:
             try:
                 print(f">> Testando API SHOPEE: {api}")
-
                 resp = await client.get(api + url)
 
                 if resp.status_code != 200:
                     continue
 
                 data = resp.json()
-
                 mp4 = data.get("video_url") or data.get("url")
 
                 if mp4:
-                    print(">> SHOPEE vídeo encontrado:", mp4)
+                    print(">> SHOPEE vídeo encontrado via API:", mp4)
 
                     video_bytes = await client.get(mp4)
                     filename = "shopee.mp4"
@@ -99,11 +96,11 @@ async def tentar_shopee_api(url: str):
     return None
 
 
-# ============================
-# 3) SHOPEE - PLAYWRIGHT
-# ============================
+# ==========================================
+# 3) SHOPEE — PLAYWRIGHT (SEM LOGIN)
+# ==========================================
 async def baixar_shopee_playwright(url: str):
-    print(">> SHOPEE usando Playwright")
+    print(">> SHOPEE usando Playwright (modo sem login)")
 
     from playwright.async_api import async_playwright
 
@@ -111,35 +108,32 @@ async def baixar_shopee_playwright(url: str):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
-
             page = await context.new_page()
 
-            # Login
-            await page.goto("https://shopee.com.br/buyer/login")
-
-            await page.fill('input[name="loginKey"]', SHOPEE_USERNAME)
-            await page.fill('input[name="password"]', SHOPEE_PASSWORD)
-
-            await page.click('button[type="submit"]')
-            await page.wait_for_timeout(3000)
-
-            # Abre o link do vídeo
+            # abre o link
             await page.goto(url, wait_until="networkidle")
 
-            video_url = await page.get_attribute("video", "src")
+            # procura o player
+            video_elem = page.locator("video")
 
-            if not video_url:
-                print(">> Não encontrou o <video>")
+            if await video_elem.count() == 0:
+                print(">> Nenhum <video> encontrado na página Shopee")
                 return None
 
-            print(">> Vídeo Shopee encontrado:", video_url)
+            video_url = await video_elem.get_attribute("src")
+
+            if not video_url:
+                print(">> O <video> existe, mas não possui SRC")
+                return None
+
+            print(">> Vídeo encontrado via Playwright:", video_url)
 
             async with httpx.AsyncClient() as client:
-                bytes_video = await client.get(video_url)
+                video_bytes = await client.get(video_url)
 
             filename = "shopee.mp4"
             with open(filename, "wb") as f:
-                f.write(bytes_video.content)
+                f.write(video_bytes.content)
 
             return filename
 
@@ -148,9 +142,9 @@ async def baixar_shopee_playwright(url: str):
         return None
 
 
-# ============================
-# DECISÃO: QUAL DOWNLOAD USAR?
-# ============================
+# ==========================================
+# 4) DECISÃO DE DOWNLOAD
+# ==========================================
 async def processar_download(url: str):
     print(">> Processando URL:", url)
 
@@ -177,9 +171,9 @@ async def processar_download(url: str):
     return None
 
 
-# ============================
-# HANDLERS TELEGRAM
-# ============================
+# ==========================================
+# 5) HANDLERS TELEGRAM
+# ==========================================
 async def start(update: Update, context):
     await update.message.reply_text("Bot ativo! Envie um link TikTok ou Shopee.")
 
@@ -206,9 +200,9 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT, receber))
 
 
-# ============================
-# WEBHOOK
-# ============================
+# ==========================================
+# 6) WEBHOOK
+# ==========================================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -217,9 +211,9 @@ async def webhook(request: Request):
     return {"ok": True}
 
 
-# ============================
-# STARTUP RENDER
-# ============================
+# ==========================================
+# 7) STARTUP NO RENDER
+# ==========================================
 @app.on_event("startup")
 async def on_startup():
     print(">> Inicializando o bot...")
