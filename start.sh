@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-
 echo ">> Instalando Chromium..."
 python3 -m playwright install chromium
 
